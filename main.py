@@ -3,6 +3,9 @@ from math import exp
 import time
 
 
+
+cell_dict = {}  # Dictionary to store the nets each cell belongs to
+
 # We created this function first, to parse a netlist given in a file (Part A)
 def parse_netlist(filepath):
     # First we open the file in read mode
@@ -38,9 +41,21 @@ def parse_netlist(filepath):
         components = [int(x) for x in parts[1:net_size + 1]]
         nets.append(components)
 
+    for net in nets:
+        for cell in net:
+            if cell not in cell_dict:
+                cell_dict[cell] = set()  # Use a set to avoid duplicates
+            for connected_cell in net:
+                if connected_cell != cell:  # Avoid adding the cell itself
+                    cell_dict[cell].add(connected_cell)
+    
+    #print(cell_dict)
+
     # Finally we return the parsed values
     return num_cells, num_nets, ny, nx, nets
 
+
+positions = {}  # Dictionary to store the positions of the cells on the grid
 
 # Then we created this function, to randomly place the cells on the grid (Part B)
 def initial_placement(num_cells, ny, nx):
@@ -63,39 +78,43 @@ def initial_placement(num_cells, ny, nx):
             y, x = available_positions.pop()
             # And place the cell number at the popped position on the grid
             grid[y][x] = cell_id
+            positions[cell_id] = (y, x)  # Store the position of the cell
 
     # Finally, we return the grid with the initial placement of cells
     return grid
 
 
+
+
+
 def calculate_wire_length(grid, nets):
-    # Function to find the position (y, x) of a cell_id in the grid
-    def position(cell_id):
-        for y in range(len(grid)):
-            for x in range(len(grid[0])):
-                if grid[y][x] == cell_id:
-                    return y, x
-        return None
+
 
     wire_length = 0  # Initialize total wire length
 
     # Iterate over each net to calculate the wire length
     for net in nets:
         # Get the positions of all cells in the current net
-        positions = [position(cell_id) for cell_id in net if position(cell_id) is not None]
+        net_positions = [positions[cell_id] for cell_id in net]
 
         # If there are positions (the cells exist in the grid)
-        if positions:
+        if net_positions:
             # Find the minimum and maximum y and x coordinates
-            min_y = min(pos[0] for pos in positions)
-            max_y = max(pos[0] for pos in positions)
-            min_x = min(pos[1] for pos in positions)
-            max_x = max(pos[1] for pos in positions)
+            min_y = min(pos[0] for pos in net_positions)
+            max_y = max(pos[0] for pos in net_positions)
+            min_x = min(pos[1] for pos in net_positions)
+            max_x = max(pos[1] for pos in net_positions)
 
             # Calculate the half-perimeter wire length for this net
             wire_length += (max_y - min_y) + (max_x - min_x)
 
     return wire_length  # Return the total wire length
+
+
+
+
+#def update_wire_length(grid, nets, wire_length, y1, x1, y2, x2):
+
 
 
 # As for the main function, to simulate the annealing placer, we added the following function (Part C and D)
@@ -131,7 +150,10 @@ def simulated_annealing(grid, nets, num_cells, cooling_rate=0.95):
             y2, x2 = random.randint(0, ny - 1), random.randint(0, nx - 1)
 
             # Then on the grid, we swap these positions, which is basically swapping 2 cells
+            
             grid[y1][x1], grid[y2][x2] = grid[y2][x2], grid[y1][x1]
+            positions[grid[y1][x1]] = (y1, x1)
+            positions[grid[y2][x2]] = (y2, x2)
 
             # Then we calculate the new wire length after the swap
             new_wire_length = calculate_wire_length(grid, nets)
@@ -170,15 +192,9 @@ def grid_to_binary(grid):
 
 if __name__ == "__main__":
 
-    filepath = 'd1.txt'
+    filepath = input("please enter the file path: ")
     num_cells, num_nets, ny, nx, nets = parse_netlist(filepath)
     grid = initial_placement(num_cells, ny, nx)
-    initial_wire_length = calculate_wire_length(grid, nets)
-
-    start_time = time.time()
-    final_grid, final_wire_length = simulated_annealing(grid, nets, num_cells)
-    end_time = time.time()
-    duration = end_time - start_time
 
     print("\n")
     print("Parsing the netlist:")
@@ -192,7 +208,18 @@ if __name__ == "__main__":
     for row in grid:
         print(' '.join(f"{cell_id:02}" if cell_id != -1 else "--" for cell_id in row))
 
+   
+
+
+    initial_wire_length = calculate_wire_length(grid, nets)
     print("Initial Random Placement Wire Length:", initial_wire_length)
+
+    start_time = time.time()
+    final_grid, final_wire_length = simulated_annealing(grid, nets, num_cells)
+    end_time = time.time()
+    duration = end_time - start_time
+
+   
 
     print("\n")
     print("Final Placement:")
