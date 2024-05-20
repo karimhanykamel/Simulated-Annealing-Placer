@@ -3,6 +3,8 @@ from math import exp
 import time
 from collections import defaultdict
 import matplotlib.pyplot as plt
+import imageio
+import numpy as np
 
 # History for plotting line graph
 twl_history = []
@@ -102,7 +104,7 @@ def swap(row1, col1, row2, col2, grid, cell_net_mapping, nets):
             new_min_col = min(nets[net].columns.keys())
             new_max_row = max(nets[net].rows.keys())
             new_max_col = max(nets[net].columns.keys())
-            
+
             new_wire_length = new_max_row - new_min_row + new_max_col - new_min_col
 
             nets[net].wire_length = new_wire_length
@@ -137,6 +139,31 @@ def swap(row1, col1, row2, col2, grid, cell_net_mapping, nets):
 
     return delta
 
+def plot_grid(grid, title):
+    fig, ax = plt.subplots()
+    cmap = plt.get_cmap('tab20', np.max(grid) + 2)  # Adjust the colormap
+    modified_grid = np.where(np.array(grid) == -1, np.max(grid) + 1, grid)  # Map -1 to the next color
+
+    ax.imshow(modified_grid, cmap=cmap, vmin=-1, vmax=np.max(grid) + 1)
+    for (i, j), val in np.ndenumerate(grid):
+        if val == -1:
+            ax.text(j, i, '--', ha='center', va='center', color='black')  # Empty cells as white with black text
+        else:
+            ax.text(j, i, f'{val:02}', ha='center', va='center', color='white')
+
+    plt.title(title)
+    fig.canvas.draw()
+
+    # Convert the plot to a numpy array and close the plot
+    image = np.frombuffer(fig.canvas.buffer_rgba(), dtype='uint8')
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    plt.close(fig)
+    return image
+
+
+def create_gif(images, output_path):
+    imageio.mimsave(output_path, images, fps=1)
+
 def simulatedAnnealing(file, cooling_rate):
     global num_cells, num_nets, ny, nx, total_wire_length, cell_net_mapping, grid, nets, twl_history, temperature_history
 
@@ -145,7 +172,7 @@ def simulatedAnnealing(file, cooling_rate):
     # Reset global variables
     twl_history = []
     temperature_history = []
-    
+
     nets = [Net() for _ in range(num_nets)]
     cell_net_mapping = [[] for _ in range(num_cells)]
     grid = [[-1 for _ in range(nx)] for _ in range(ny)]
@@ -168,7 +195,11 @@ def simulatedAnnealing(file, cooling_rate):
     twl_history.append(total_wire_length)
     temperature_history.append(curr_temp)
 
+    # Animation
+    images = [plot_grid(grid, 'Initial Placement')]
+
     # Simulated Annealing
+    iteration_count = 0
     while curr_temp > final_temp:
         # Randomly swap cells
         for _ in range(10 * num_cells):
@@ -195,6 +226,16 @@ def simulatedAnnealing(file, cooling_rate):
         # Store current values for plotting
         twl_history.append(total_wire_length)
         temperature_history.append(curr_temp)
+
+        # Add intermediate frames to the GIF
+        if iteration_count % 10 == 0:
+            images.append(plot_grid(grid, f'Intermediate Placement {iteration_count // 10 + 1}'))
+        iteration_count += 1
+
+    images.append(plot_grid(grid, 'Final Placement'))
+
+    # Create the final GIF
+    create_gif(images, 'placement_progress.gif')
 
     print("Final placement: ")
     printGrid(grid)
@@ -248,7 +289,7 @@ if __name__ == "__main__":
 
             print(f"Time Elapsed: {duration:.6f} s.")
             plot_temperature_vs_wire_length()
-            
+
             final_wire_lengths = run_experiments(filename)
             plot_twl_v_cooling_rate(final_wire_lengths)
 
