@@ -1,236 +1,256 @@
 import random
 from math import exp
 import time
+from collections import defaultdict
+import matplotlib.pyplot as plt
 
+# History for plotting line graph
+twl_history = []
+temperature_history = []
 
+class Net:
+    def __init__(self):
+        self.rows = defaultdict(int)
+        self.columns = defaultdict(int)
+        self.wire_length = 0
 
-cell_dict = {}  # Dictionary to store the nets each cell belongs to
+def isFull(grid, row, col):
+    return 0 <= row < len(grid) and 0 <= col < len(grid[0]) and grid[row][col] != -1
 
-# We created this function first, to parse a netlist given in a file (Part A)
-def parse_netlist(filepath):
-    # First we open the file in read mode
-    with open(filepath, 'r') as file:
-        # Then we read all lines from the file
-        lines = file.readlines()
+def printGrid(grid):
+    column_width = 5  # Set the desired width for the columns
+    for i in range(ny):
+        for j in range(nx):
+            if not isFull(grid, i, j):
+                print('--'.ljust(column_width), end=' ')
+            else:
+                print(f"{grid[i][j]:02}".ljust(column_width), end=' ')
+        print()
+    print()
 
-    # We had to strip the whitespace first from the first line and split the values into components
-    # header = first line in the file
-    header = lines[0].strip().split()
+def printGridBinary(grid):
+    for i in range(ny):
+        for j in range(nx):
+            if isFull(grid, i, j):
+                print("0", end=' ')
+            else:
+                print("1", end=' ')
+        print()
+    print()
 
-    # After splitting the header, the first value is the number of cells
-    num_cells = int(header[0])
-    # The second value is the number of nets
-    num_nets = int(header[1])
-    # This is to get the number of rows
-    ny = int(header[2])
-    # This is to get the number of cols
-    nx = int(header[3])
+def updateAffectedNets(cell_id, row, col, cell_net_mapping, nets):
+    global total_wire_length
 
-    # After this, we initialize an empty list to store the nets, from the remaining lines in the file
-    nets = []
-    # We loop through each remaining line in the file, starting from the second line
-    # lines[1:] skips the header line and starts from the second line
-    for line in lines[1:]:
-        parts = line.strip().split()
-        # The first value indicates the size of the net
-        net_size = int(parts[0])
+    for net in cell_net_mapping[cell_id]:
+        current_wire_length = nets[net].wire_length
 
-        # The next values are the components of the net
-        # Loops till net_size + 1, to include the last value in the line
-        # We then add the list of components to the nets list
-        components = [int(x) for x in parts[1:net_size + 1]]
-        nets.append(components)
+        nets[net].rows[row] += 1
+        nets[net].columns[col] += 1
 
-    for net in nets:
-        for cell in net:
-            if cell not in cell_dict:
-                cell_dict[cell] = set()  # Use a set to avoid duplicates
-            for connected_cell in net:
-                if connected_cell != cell:  # Avoid adding the cell itself
-                    cell_dict[cell].add(connected_cell)
+        new_min_row = min(nets[net].rows.keys())
+        new_min_col = min(nets[net].columns.keys())
+        new_max_row = max(nets[net].rows.keys())
+        new_max_col = max(nets[net].columns.keys())
+
+        new_wire_length = new_max_row - new_min_row + new_max_col - new_min_col
+
+        nets[net].wire_length = new_wire_length
+
+        total_wire_length += new_wire_length - current_wire_length
+
+def create_cell_net_mapping(file, cell_net_mapping):
+    for i in range(num_nets):
+        line = file.readline().strip().split()
+        for component in map(int, line[1:]):
+            cell_net_mapping[component].append(i)
+
+def findEmptySpace(grid):
+    while True:
+        row = random.randint(0, ny - 1)
+        col = random.randint(0, nx - 1)
+        if not isFull(grid, row, col):
+            return row, col
+
+def intitialRandomPlacement(grid, cell_net_mapping, nets):
+    for cell_id in range(num_cells):
+        row, col = findEmptySpace(grid)
+        grid[row][col] = cell_id
+        updateAffectedNets(cell_id, row, col, cell_net_mapping, nets)
+
+def swap(row1, col1, row2, col2, grid, cell_net_mapping, nets):
+    delta = 0
+    cell1 = grid[row1][col1]
+    cell2 = grid[row2][col2]
+
+    # If the cells are full, update the affected nets for first cell
+    if isFull(grid, row1, col1):
+        for net in cell_net_mapping[cell1]:
+            current_wire_length = nets[net].wire_length
+
+            nets[net].rows[row1] -= 1
+            if nets[net].rows[row1] == 0:
+                del nets[net].rows[row1]
+
+            nets[net].columns[col1] -= 1
+            if nets[net].columns[col1] == 0:
+                del nets[net].columns[col1]
+
+            nets[net].rows[row2] += 1
+            nets[net].columns[col2] += 1
+
+            new_min_row = min(nets[net].rows.keys())
+            new_min_col = min(nets[net].columns.keys())
+            new_max_row = max(nets[net].rows.keys())
+            new_max_col = max(nets[net].columns.keys())
+            
+            new_wire_length = new_max_row - new_min_row + new_max_col - new_min_col
+
+            nets[net].wire_length = new_wire_length
+
+            delta += new_wire_length - current_wire_length
+
+    # Update the affected nets for the second cell
+    if isFull(grid, row2, col2):
+        for net_idx in cell_net_mapping[cell2]:
+            current_wire_length = nets[net_idx].wire_length
+
+            nets[net_idx].rows[row2] -= 1
+            if nets[net_idx].rows[row2] == 0:
+                del nets[net_idx].rows[row2]
+
+            nets[net_idx].columns[col2] -= 1
+            if nets[net_idx].columns[col2] == 0:
+                del nets[net_idx].columns[col2]
+
+            nets[net_idx].rows[row1] += 1
+            nets[net_idx].columns[col1] += 1
+
+            new_min_row = min(nets[net_idx].rows.keys())
+            new_min_col = min(nets[net_idx].columns.keys())
+            new_max_row = max(nets[net_idx].rows.keys())
+            new_max_col = max(nets[net_idx].columns.keys())
+            new_wire_length = new_max_row - new_min_row + new_max_col - new_min_col
+
+            nets[net_idx].wire_length = new_wire_length
+
+            delta += new_wire_length - current_wire_length
+
+    return delta
+
+def simulatedAnnealing(file, cooling_rate):
+    global num_cells, num_nets, ny, nx, total_wire_length, cell_net_mapping, grid, nets, twl_history, temperature_history
+
+    random.seed(42)
+
+    # Reset global variables
+    twl_history = []
+    temperature_history = []
     
-    #print(cell_dict)
-
-    # Finally we return the parsed values
-    return num_cells, num_nets, ny, nx, nets
-
-
-positions = {}  # Dictionary to store the positions of the cells on the grid
-
-# Then we created this function, to randomly place the cells on the grid (Part B)
-def initial_placement(num_cells, ny, nx):
-    # First, we initialize the grid with -1 to indicate empty cells
+    nets = [Net() for _ in range(num_nets)]
+    cell_net_mapping = [[] for _ in range(num_cells)]
     grid = [[-1 for _ in range(nx)] for _ in range(ny)]
 
-    # Then we created a list, available_positions, to hold all possible positions on the grid, row by row
-    # for example: [(0, 0), (0, 1), (1, 0), (1, 1)]
-    available_positions = [(y, x) for y in range(ny) for x in range(nx)]
+    create_cell_net_mapping(file, cell_net_mapping)
 
-    # Then we shuffle the list to randomize the placement positions
-    random.shuffle(available_positions)
+    total_wire_length = 0
+    intitialRandomPlacement(grid, cell_net_mapping, nets)
 
-    # After that, we assign a cell number to the random positions on the grid
-    # For the number of cells we have:
-    for cell_id in range(num_cells):
-        # If available_positions is not empty
-        if available_positions:
-            # We get a position from the shuffled list
-            y, x = available_positions.pop()
-            # And place the cell number at the popped position on the grid
-            grid[y][x] = cell_id
-            positions[cell_id] = (y, x)  # Store the position of the cell
+    initial_total_wire_length = total_wire_length
+    print("Initial placement: \n")
+    printGrid(grid)
+    print(f"Initial total wire length: {total_wire_length}")
 
-    # Finally, we return the grid with the initial placement of cells
-    return grid
+    initial_temp = 500.0 * initial_total_wire_length
+    final_temp = 5e-6 * initial_total_wire_length / num_nets
+    curr_temp = initial_temp
 
+    # Store initial values for plotting
+    twl_history.append(total_wire_length)
+    temperature_history.append(curr_temp)
 
+    # Simulated Annealing
+    while curr_temp > final_temp:
+        # Randomly swap cells
+        for _ in range(10 * num_cells):
+            row1, col1, row2, col2 = None, None, None, None
+            row1, col1 = random.randint(0, ny - 1), random.randint(0, nx - 1)
+            row2, col2 = random.randint(0, ny - 1), random.randint(0, nx - 1)
 
+            # Swap the cells and calculate the change in wire length
+            delta = swap(row1, col1, row2, col2, grid, cell_net_mapping, nets)
+            grid[row1][col1], grid[row2][col2] = grid[row2][col2], grid[row1][col1]
+            total_wire_length += delta
 
+            if delta >= 0:
+                rand_val = random.random()
+                threshold = 1 - exp(-delta / curr_temp)
+                if rand_val < threshold:
+                    delta = swap(row1, col1, row2, col2, grid, cell_net_mapping, nets)
+                    grid[row1][col1], grid[row2][col2] = grid[row2][col2], grid[row1][col1]
+                    total_wire_length += delta
 
-def calculate_wire_length(grid, nets):
+        # Reduce temperature
+        curr_temp *= cooling_rate
 
+        # Store current values for plotting
+        twl_history.append(total_wire_length)
+        temperature_history.append(curr_temp)
 
-    wire_length = 0  # Initialize total wire length
+    print("Final placement: ")
+    printGrid(grid)
+    print(f"Total wire length: {total_wire_length}")
+    return total_wire_length
 
-    # Iterate over each net to calculate the wire length
-    for net in nets:
-        # Get the positions of all cells in the current net
-        net_positions = [positions[cell_id] for cell_id in net]
+def plot_temperature_vs_wire_length():
+    plt.figure()
+    plt.plot(temperature_history, twl_history, marker='o')
+    plt.xlabel('Temperature (log2 scale)')
+    plt.ylabel('Total Wire Length (TWL)')
+    plt.title('Temperature vs Total Wire Length')
+    plt.grid(True)
+    plt.xscale('log', base=2)
+    plt.gca().invert_xaxis()
+    plt.show()
 
-        # If there are positions (the cells exist in the grid)
-        if net_positions:
-            # Find the minimum and maximum y and x coordinates
-            min_y = min(pos[0] for pos in net_positions)
-            max_y = max(pos[0] for pos in net_positions)
-            min_x = min(pos[1] for pos in net_positions)
-            max_x = max(pos[1] for pos in net_positions)
+def plot_twl_v_cooling_rate(twls):
+    cooling_rates = [0.75, 0.80, 0.85, 0.90, 0.95]
+    plt.figure()
+    plt.plot(cooling_rates, twls, marker='o', linestyle='-')
+    plt.xlabel('Cooling Rate')
+    plt.ylabel('Final Total Wire Length (TWL)')
+    plt.title('Effect of Cooling Rate on Final Total Wire Length')
+    plt.grid(True)
+    plt.show()
 
-            # Calculate the half-perimeter wire length for this net
-            wire_length += (max_y - min_y) + (max_x - min_x)
+def run_experiments(filepath):
+    cooling_rates = [0.75, 0.80, 0.85, 0.90, 0.95]
+    final_wire_lengths = []
 
-    return wire_length  # Return the total wire length
-
-
-
-
-#def update_wire_length(grid, nets, wire_length, y1, x1, y2, x2):
-
-
-
-# As for the main function, to simulate the annealing placer, we added the following function (Part C and D)
-def simulated_annealing(grid, nets, num_cells, cooling_rate=0.95):
-    # We first calculate the initial cost (wire length) of the initial placement
-    initial_cost = calculate_wire_length(grid, nets)
-    # Then we set the initial temperature based on the initial cost
-    initial_temp = 500 * initial_cost
-    # And we set the final temperature based on the initial cost and number of nets
-    final_temp = 5e-6 * initial_cost / len(nets)
-    # After, we set the number of iterations (Moves per Temperature) based on the number of cells
-    num_iterations = 20 * num_cells
-
-    # After that, we initialize the current temperature and wire length
-    current_temp = initial_temp
-    current_wire_length = initial_cost
-
-    # Then we set the initial grid and wire length as the best solution so for, which will be updated
-    best_grid = [row[:] for row in grid]
-    best_wire_length = current_wire_length
-
-    # We needed to a function to keep updating the temperature, which will be needed for cooling down
-    def schedule_temp(current_temp):
-        return current_temp * cooling_rate
-
-    # So as long as the current_temp is greater than the final temp, this will happen:
-    while current_temp > final_temp:
-        # For each iteration, which we got based on the number of cells:
-        for _ in range(num_iterations):
-
-            # We first pick two random positions
-            y1, x1 = random.randint(0, ny - 1), random.randint(0, nx - 1)
-            y2, x2 = random.randint(0, ny - 1), random.randint(0, nx - 1)
-
-            # Then on the grid, we swap these positions, which is basically swapping 2 cells
-            
-            grid[y1][x1], grid[y2][x2] = grid[y2][x2], grid[y1][x1]
-            positions[grid[y1][x1]] = (y1, x1)
-            positions[grid[y2][x2]] = (y2, x2)
-
-            # Then we calculate the new wire length after the swap
-            new_wire_length = calculate_wire_length(grid, nets)
-
-            # We then calculate the change in wire length which is delta L
-            delta_L = new_wire_length - current_wire_length
-
-            # We then have to decide if we will accept the new configuration
-            if delta_L < 0 or random.random() < exp(-delta_L / current_temp):
-                # If the change in wire length is negative, the new configuration is better, so we accept it
-                # Or, if the new configuration is worse (delta_L > 0), we accept it with a probability
-                # based on the exponential function. This probability decreases as delta_L increases
-                # or as the temperature decreases, allowing it to escape local minima early on.
-                current_wire_length = new_wire_length
-                # If the new configuration is the best we have seen so far, we update the best wire length and grid
-                if new_wire_length < best_wire_length:
-                    best_wire_length = new_wire_length
-                    best_grid = [row[:] for row in grid]
-            else:
-                # If the new configuration is not accepted, revert the swap to restore the previous state
-                grid[y1][x1], grid[y2][x2] = grid[y2][x2], grid[y1][x1]
-
-        # Cool down
-        current_temp = schedule_temp(current_temp)
-
-    return best_grid, best_wire_length
-
-
-def grid_to_binary(grid):
-    binary_grid = []
-    for row in grid:
-        binary_row = ''.join('0' if cell_id != -1 else '1' for cell_id in row)
-        binary_grid.append(binary_row)
-    return binary_grid
-
+    for cooling_rate in cooling_rates:
+        with open(filepath, 'r') as file:
+            global num_cells, num_nets, ny, nx
+            num_cells, num_nets, ny, nx = map(int, file.readline().strip().split())
+            final_wire_length = simulatedAnnealing(file, cooling_rate)
+            final_wire_lengths.append(final_wire_length)
+    return final_wire_lengths
 
 if __name__ == "__main__":
+    filename = input("Enter file name: ")
 
-    filepath = input("please enter the file path: ")
-    num_cells, num_nets, ny, nx, nets = parse_netlist(filepath)
-    grid = initial_placement(num_cells, ny, nx)
+    try:
+        with open(filename, 'r') as file:
+            num_cells, num_nets, ny, nx = map(int, file.readline().strip().split())
+            cooling_rate = 0.95
+            start = time.time()
+            simulatedAnnealing(file, cooling_rate)
+            end = time.time()
+            duration = end - start
 
-    print("\n")
-    print("Parsing the netlist:")
-    print("Number of cells:", num_cells)
-    print("Number of nets:", num_nets)
-    print("Grid dimensions:", ny, "x", nx)
-    print("Nets:", nets)
+            print(f"Time Elapsed: {duration:.6f} s.")
+            plot_temperature_vs_wire_length()
+            
+            final_wire_lengths = run_experiments(filename)
+            plot_twl_v_cooling_rate(final_wire_lengths)
 
-    print("\n")
-    print("Initial Random Placement:")
-    for row in grid:
-        print(' '.join(f"{cell_id:02}" if cell_id != -1 else "--" for cell_id in row))
-
-   
-
-
-    initial_wire_length = calculate_wire_length(grid, nets)
-    print("Initial Random Placement Wire Length:", initial_wire_length)
-
-    start_time = time.time()
-    final_grid, final_wire_length = simulated_annealing(grid, nets, num_cells)
-    end_time = time.time()
-    duration = end_time - start_time
-
-   
-
-    print("\n")
-    print("Final Placement:")
-    for row in final_grid:
-        print(' '.join(f"{cell_id:02}" if cell_id != -1 else "--" for cell_id in row))
-    print("Final Wire Length:", final_wire_length)
-
-    print("\nFinal Placement (Binary Format):")
-    final_binary_grid = grid_to_binary(final_grid)
-    for row in final_binary_grid:
-        print(row)
-
-    print("\n")
-    print("Time taken for simulated annealing: {:.2f} seconds".format(duration))
+    except FileNotFoundError:
+        print("File not found.")
